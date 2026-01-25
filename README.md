@@ -11,8 +11,8 @@ Somos la comunidad hispana más grande de **programación** y **estudio** en Dis
   <h1>Sentinel</h1>
   <p>Bot de seguridad de nuestra comunidad.</p>
 
-  [![Discord](https://img.shields.io/discord/1070000000000000000?color=5865F2&label=Discord&logo=discord&logoColor=white)](https://discord.gg/programacion)
-  [![License](https://img.shields.io/github/license/somospye/sentinel?color=blue)](./LICENSE)
+  [![Discord](https://img.shields.io/discord/768278151435386900?color=5865F2&label=Discord&logo=discord&logoColor=white)](https://discord.gg/programacion)
+  [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 </div>
 
 ---
