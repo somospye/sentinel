@@ -112,19 +112,24 @@ func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCre
 		return
 	}
 
-	content := strings.ToLower(msg.Content)
+	content := msg.Content
 	for _, filter := range m.SpamFilters {
-		match, _ := filter.Filter.MatchString(content)
-		if match {
-			m.TakeAction(s, msg, "Spam Filter", filter.WarnMessage, filter.Mute, nil)
+		match, _ := filter.Filter.FindStringMatch(content)
+		if match != nil {
+			detail := fmt.Sprintf("Match: `%s`\nRegex: `%s`", match.String(), filter.Filter.String())
+			if filter.WarnMessage != "" {
+				detail = filter.WarnMessage + "\n" + detail
+			}
+			m.TakeAction(s, msg, "Spam Filter", detail, filter.Mute, nil)
 			return
 		}
 	}
 
 	for _, filter := range m.ScamFilters {
-		match, _ := filter.MatchString(content)
-		if match {
-			m.TakeAction(s, msg, "Scam Phrase Filter", "Posible estafa detectada en el texto.", false, nil)
+		match, _ := filter.FindStringMatch(content)
+		if match != nil {
+			detail := fmt.Sprintf("Posible estafa detectada en el texto.\nMatch: `%s`\nRegex: `%s`", match.String(), filter.String())
+			m.TakeAction(s, msg, "Scam Phrase Filter", detail, false, nil)
 			return
 		}
 	}
