@@ -15,7 +15,7 @@ Antes de comenzar, asegúrate de leer y seguir todas las instrucciones de este d
    cd sentinel
    ```
 
-3. **Instala Go**: Asegúrate de tener Go 1.21 o superior instalado. Puedes descargarlo en [go.dev](https://go.dev/).
+3. **Instala Go**: Asegúrate de tener Go 1.25.6 o superior instalado. Puedes descargarlo en [go.dev](https://go.dev/).
 
 4. **Instala dependencias**:
    ```bash

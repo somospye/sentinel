@@ -27,7 +27,7 @@ Somos la comunidad hispana más grande de **programación** y **estudio** en Dis
 ## Instalación y Uso
 
 ### Requisitos Previos
-- [Go](https://go.dev/dl/) (versión 1.21 o superior)
+- [Go](https://go.dev/dl/) (versión 1.25.6 o superior)
 - [Git](https://git-scm.com/)
 
 ### Configuración
