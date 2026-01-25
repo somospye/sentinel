@@ -29,6 +29,8 @@ func main() {
 		log.Fatal("BOT_TOKEN no está configurado")
 	}
 
+	ownerID := os.Getenv("OWNER_ID")
+
 	dg, err := discordgo.New("Bot " + token)
 	if err != nil {
 		log.Fatalf("Error creando sesión de Discord: %v", err)
@@ -53,7 +55,7 @@ func main() {
 		data := i.ApplicationCommandData()
 		switch data.Name {
 		case "set":
-			if i.Member.User.ID != "407570755673522176" {
+			if i.Member.User.ID != ownerID {
 				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseChannelMessageWithSource,
 					Data: &discordgo.InteractionResponseData{
