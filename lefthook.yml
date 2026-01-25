@@ -1,0 +1,32 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: lint staged
+      run: >
+        [ -n "$SKIP_LINT_STAGED" ] && echo "Skipping hook in favor of env variable..." || go fmt ./...
+
+prepare-commit-msg:
+  commands:
+    conventional-commits-prepare:
+      tags: commit-msg
+      run: |
+        echo '[note] usa convencional commits: <tipo>(scope opcional): descripcion corta'
+        echo '[note] nada de emojis ni mensajes novelescos, dale conciso'
+
+commit-msg:
+  commands:
+    conventional-commits:
+      tags: commit-msg
+      run: bash scripts/validate-commit-msg.sh "$@"
+      fail_text: "Commit message doesn't follow Conventional Commits specification."
+
+colors: true
+no_tty: false
+source_dir: ".lefthook"
+source_dir_local: ".lefthook-local"
+
+output:
+  - execution
+  - execution_out
+  - execution_info
+  - skips
