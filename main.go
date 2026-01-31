@@ -16,12 +16,22 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/joho/godotenv"
+
+	ort "github.com/yalue/onnxruntime_go"
 )
 
 func main() {
 	err := godotenv.Load(".env")
 	if err != nil {
 		log.Printf("Advertencia: Error cargando archivo .env (%s)", err)
+	}
+
+	fmt.Println("Cargando ONNX Runtime desde:", automod.GetSharedLibPath())
+	ort.SetSharedLibraryPath(automod.GetSharedLibPath())
+
+	e := ort.InitializeEnvironment()
+	if e != nil {
+		_ = fmt.Errorf("Error inicializando ONNX Runtime: %w", e)
 	}
 
 	token := os.Getenv("BOT_TOKEN")
@@ -380,6 +390,7 @@ func main() {
 	<-sc
 
 	dg.Close()
+	defer ort.DestroyEnvironment()
 }
 
 func diffPermissions(oldPerm, newPerm int64) (added, removed []string) {

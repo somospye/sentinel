@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image/jpeg"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -21,7 +22,7 @@ type Config struct {
 }
 
 type Manager struct {
-	Scanner        *PhashScanner
+	Scanner        *CLIPScanner
 	ScamFilters    []*regexp2.Regexp
 	SpamFilters    []IFilter
 	GuildConfig    map[string]*Config
@@ -35,7 +36,7 @@ type Manager struct {
 
 func NewManager(configPath string) *Manager {
 	m := &Manager{
-		Scanner:        NewPhashScanner(),
+		Scanner:        CLIPScan(),
 		ScamFilters:    GetScamFilterList(),
 		SpamFilters:    SpamFilterList,
 		GuildConfig:    make(map[string]*Config),
@@ -189,12 +190,26 @@ func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCre
 				go func(attachment *discordgo.MessageAttachment) {
 					img, err := DownloadImage(attachment.URL)
 					if err == nil {
-						res := m.Scanner.Compare(img)
-						if res.Match {
+						start := time.Now()
+						var mStart, mEnd runtime.MemStats
+						runtime.ReadMemStats(&mStart)
+
+						match, name, score, crop := m.Scanner.Compare(img)
+
+						elapsed := time.Since(start)
+
+						runtime.ReadMemStats(&mEnd)
+
+						memUsedKB := int64(mEnd.HeapInuse-mStart.HeapInuse) / 1024
+						if memUsedKB < 0 {
+							memUsedKB = 0
+						}
+
+						if match {
 							once.Do(func() {
-								detail := fmt.Sprintf("Imagen detectada: %s\nDistancias: [P:%d D:%d A:%d] Avg: **%d**",
-									res.Name, res.PDist, res.DDist, res.ADist, res.AvgDist)
-								m.TakeAction(s, msg, "Imagen Scam", detail, 7*24*time.Hour, res.CropJPEG)
+								detail := fmt.Sprintf("Imagen detectada: %s\nScore: %.3f\nTiempo: %s\nMemoria: %s",
+									name, score, elapsed, formatMemory(float64(memUsedKB)))
+								m.TakeAction(s, msg, "Imagen Scam", detail, 7*24*time.Hour, crop)
 							})
 							return
 						}
@@ -223,6 +238,28 @@ func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCre
 	m.LastActivity[msg.Author.ID] = time.Now()
 	m.mu.Unlock()
 	m.SaveActivity()
+}
+
+func formatMemory(b float64) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+		TB = GB * 1024
+	)
+
+	switch {
+	case b >= TB:
+		return fmt.Sprintf("%.2f TB", b/TB)
+	case b >= GB:
+		return fmt.Sprintf("%.2f GB", b/GB)
+	case b >= MB:
+		return fmt.Sprintf("%.2f MB", b/MB)
+	case b >= KB:
+		return fmt.Sprintf("%.2f KB", b/KB)
+	default:
+		return fmt.Sprintf("%.0f B", b)
+	}
 }
 
 func (m *Manager) TakeAction(s *discordgo.Session, msg *discordgo.MessageCreate, reason, detail string, muteDuration time.Duration, cropData []byte) {
