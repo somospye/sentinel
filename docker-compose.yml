@@ -1,0 +1,10 @@
+services:
+  app:
+    build: .
+    container_name: sentinel
+    env_file:
+      - .env
+    volumes:
+      - ./assets/scam:/app/assets/scam
+      - ./models:/app/models
+      - ./runtime:/app/runtime
