@@ -22,7 +22,7 @@ Somos la comunidad hispana más grande de **programación** y **estudio** en Dis
 ## Características Principales
 
 - **Logs Detallados:** Seguimiento exhaustivo de eventos en el servidor (roles, canales, etc.).
-- **Análisis de Imágenes:** Detección de scams mediante comparación de hashes de imágenes.
+- **Análisis de Imágenes:** Detección de scams mediante comparación de imágenes utilizando modelos de Inteligencia Artificial.
 
 ## Instalación y Uso
 
