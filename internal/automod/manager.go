@@ -114,7 +114,7 @@ func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCre
 		return
 	}
 
-	if slices.Contains(msg.Member.Roles, "808889381187485736") {
+	if slices.Contains(msg.Member.Roles, os.Getenv("ADMIN_ID")) {
 		return
 	}
 
