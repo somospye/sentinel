@@ -7,6 +7,7 @@ import (
 	"image/jpeg"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -110,6 +111,10 @@ func (m *Manager) IsNSFWEnabled(guildID string) bool {
 
 func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCreate) {
 	if msg.Author.Bot {
+		return
+	}
+
+	if slices.Contains(msg.Member.Roles, os.Getenv("ADMIN_ID")) {
 		return
 	}
 
