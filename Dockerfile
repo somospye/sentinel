@@ -19,7 +19,7 @@ COPY . .
 RUN CGO_ENABLED=1 GOOS=linux go build -o sentinel main.go
 
 # Runner
-FROM arm64v8/debian:bookworm-slim
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
