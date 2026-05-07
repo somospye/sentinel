@@ -281,7 +281,7 @@ func (m *Manager) TakeAction(s *discordgo.Session, msg *discordgo.MessageCreate,
 	if logChannel != "" {
 		embed := &discordgo.MessageEmbed{
 			Title:       "🚨 Automod",
-			Description: fmt.Sprintf("Usuario: <@%s> (%s)\nRazón: **%s**\nDetalle: %s", msg.Author.ID, msg.Author.String(), reason, detail),
+			Description: fmt.Sprintf("Usuario: <@%s> (%s) [%s]\nRazón: **%s**\nDetalle: %s", msg.Author.ID, msg.Author.String(), msg.Author.ID, reason, detail),
 			Color:       0xff0000,
 			Timestamp:   time.Now().Format(time.RFC3339),
 			Footer: &discordgo.MessageEmbedFooter{
