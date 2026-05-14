@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -115,11 +116,17 @@ func main() {
 			}
 
 		case "add-scam":
-			if i.Member.Permissions&discordgo.PermissionBanMembers == 0 {
+			adminID := os.Getenv("ADMIN_ID")
+			modID := os.Getenv("MOD_ID")
+			isAuthorized := i.Member.Permissions&discordgo.PermissionBanMembers != 0 ||
+				slices.Contains(i.Member.Roles, adminID) ||
+				slices.Contains(i.Member.Roles, modID)
+
+			if !isAuthorized {
 				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseChannelMessageWithSource,
 					Data: &discordgo.InteractionResponseData{
-						Content: "Necesitas permiso de baneo para agregar imágenes de scam.",
+						Content: "No tienes permiso para agregar imágenes de scam. Se requiere rol de Admin, Mod o permiso de baneo.",
 						Flags:   discordgo.MessageFlagsEphemeral,
 					},
 				})
@@ -172,7 +179,6 @@ func main() {
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
 					Content: fmt.Sprintf("Imagen agregada a la lista de scams como `%s`.", fileName),
-					Flags:   discordgo.MessageFlagsEphemeral,
 				},
 			})
 		}
