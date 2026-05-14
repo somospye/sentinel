@@ -29,10 +29,15 @@ type Manager struct {
 	GuildConfig    map[string]*Config
 	mu             sync.RWMutex
 	mentionHistory map[string][]time.Time
-	messageHistory map[string][]time.Time
+	messageHistory map[string][]messageEntry
 	configPath     string
 	activityPath   string
 	LastActivity   map[string]time.Time
+}
+
+type messageEntry struct {
+	Content   string
+	Timestamp time.Time
 }
 
 func NewManager(configPath string) *Manager {
@@ -42,7 +47,7 @@ func NewManager(configPath string) *Manager {
 		SpamFilters:    SpamFilterList,
 		GuildConfig:    make(map[string]*Config),
 		mentionHistory: make(map[string][]time.Time),
-		messageHistory: make(map[string][]time.Time),
+		messageHistory: make(map[string][]messageEntry),
 		LastActivity:   make(map[string]time.Time),
 		configPath:     configPath,
 		activityPath:   strings.TrimSuffix(configPath, ".json") + "_activity.json",
@@ -149,7 +154,7 @@ func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCre
 		return
 	}
 
-	if m.isSpamming(msg.Author.ID) {
+	if m.isSpamming(msg.GuildID, msg.Author.ID, msg.Content) {
 		m.TakeAction(s, msg, "Spam", "Enviando mensajes demasiado rápido.", 5*time.Minute, nil)
 		return
 	}
@@ -242,7 +247,7 @@ func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCre
 	m.mu.Lock()
 	m.LastActivity[msg.Author.ID] = time.Now()
 	m.mu.Unlock()
-	m.SaveActivity()
+	go m.SaveActivity()
 }
 
 func formatMemory(b float64) string {
@@ -310,24 +315,30 @@ func (m *Manager) TakeAction(s *discordgo.Session, msg *discordgo.MessageCreate,
 	}
 }
 
-func (m *Manager) isSpamming(userID string) bool {
+func (m *Manager) isSpamming(guildID, userID string, content string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	key := guildID + ":" + userID
 	now := time.Now()
-	history := m.messageHistory[userID]
+	history := m.messageHistory[key]
 
-	var newHistory []time.Time
-	for _, t := range history {
-		if now.Sub(t) < 5*time.Second {
-			newHistory = append(newHistory, t)
+	var newHistory []messageEntry
+	duplicates := 0
+	for _, entry := range history {
+		if now.Sub(entry.Timestamp) < 5*time.Second {
+			newHistory = append(newHistory, entry)
+			if entry.Content == content {
+				duplicates++
+			}
 		}
 	}
 
-	newHistory = append(newHistory, now)
-	m.messageHistory[userID] = newHistory
+	newHistory = append(newHistory, messageEntry{Content: content, Timestamp: now})
+	m.messageHistory[key] = newHistory
 
-	return len(newHistory) > 5
+	// Detectar 5 mensajes cualesquiera o 3 mensajes idénticos
+	return len(newHistory) >= 5 || duplicates >= 2
 }
 
 func (m *Manager) LogEvent(s *discordgo.Session, guildID string, embed *discordgo.MessageEmbed) {
