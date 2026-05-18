@@ -34,6 +34,7 @@ type AdvancedSessionWrapper struct {
 	session      *ort.AdvancedSession
 	inputTensor  *ort.Tensor[float32]
 	outputTensor *ort.Tensor[float32]
+	mu           sync.Mutex
 }
 
 func SessionWrapper() *AdvancedSessionWrapper {
@@ -49,6 +50,10 @@ func SessionWrapper() *AdvancedSessionWrapper {
 
 func (s *AdvancedSessionWrapper) Run(img image.Image) []float32 {
 	data := preprocess(img)
+	
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
 	copy(s.inputTensor.GetData(), data)
 
 	if err := s.session.Run(); err != nil {
