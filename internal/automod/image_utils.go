@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 
+	_ "golang.org/x/image/webp"
+
 	"golang.org/x/image/draw"
 )
 
