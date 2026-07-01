@@ -114,6 +114,46 @@ func (m *Manager) IsNSFWEnabled(guildID string) bool {
 	return false
 }
 
+func (m *Manager) AnalyzeMessageEdit(s *discordgo.Session, msg *discordgo.MessageUpdate) {
+	if msg.Author.Bot {
+		return
+	}
+
+	if msg.Member != nil && slices.Contains(msg.Member.Roles, os.Getenv("ADMIN_ID")) {
+		return
+	}
+
+	content := msg.Content
+	if content == "" {
+		return
+	}
+
+	for _, filter := range m.SpamFilters {
+		match, _ := filter.Filter.FindStringMatch(content)
+		if match != nil {
+			detail := fmt.Sprintf("Match: `%s`\nRegex: `%s`\n[Mensaje editado]", match.String(), filter.Filter.String())
+			if filter.WarnMessage != "" {
+				detail = filter.WarnMessage + "\n" + detail
+			}
+			muteDur := time.Duration(0)
+			if filter.Mute {
+				muteDur = 7 * 24 * time.Hour
+			}
+			m.TakeAction(s, msg.Message, "Spam Filter (Edición)", detail, muteDur, nil)
+			return
+		}
+	}
+
+	for _, filter := range m.ScamFilters {
+		match, _ := filter.FindStringMatch(content)
+		if match != nil {
+			detail := fmt.Sprintf("Posible estafa detectada en el texto.\nMatch: `%s`\nRegex: `%s`\n[Mensaje editado]", match.String(), filter.String())
+			m.TakeAction(s, msg.Message, "Scam Phrase Filter (Edición)", detail, 0, nil)
+			return
+		}
+	}
+}
+
 func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCreate) {
 	if msg.Author.Bot {
 		return
@@ -135,7 +175,7 @@ func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCre
 			if filter.Mute {
 				muteDur = 7 * 24 * time.Hour
 			}
-			m.TakeAction(s, msg, "Spam Filter", detail, muteDur, nil)
+			m.TakeAction(s, msg.Message, "Spam Filter", detail, muteDur, nil)
 			return
 		}
 	}
@@ -144,18 +184,18 @@ func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCre
 		match, _ := filter.FindStringMatch(content)
 		if match != nil {
 			detail := fmt.Sprintf("Posible estafa detectada en el texto.\nMatch: `%s`\nRegex: `%s`", match.String(), filter.String())
-			m.TakeAction(s, msg, "Scam Phrase Filter", detail, 0, nil)
+			m.TakeAction(s, msg.Message, "Scam Phrase Filter", detail, 0, nil)
 			return
 		}
 	}
 
 	if len(msg.Mentions) > 5 {
-		m.TakeAction(s, msg, "Mass Mention", "Demasiadas menciones en un solo mensaje.", 7*24*time.Hour, nil)
+		m.TakeAction(s, msg.Message, "Mass Mention", "Demasiadas menciones en un solo mensaje.", 7*24*time.Hour, nil)
 		return
 	}
 
 	if m.isSpamming(msg.GuildID, msg.Author.ID, msg.Content) {
-		m.TakeAction(s, msg, "Spam", "Enviando mensajes demasiado rápido.", 5*time.Minute, nil)
+		m.TakeAction(s, msg.Message, "Spam", "Enviando mensajes demasiado rápido.", 5*time.Minute, nil)
 		return
 	}
 
@@ -219,7 +259,7 @@ func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCre
 							once.Do(func() {
 								detail := fmt.Sprintf("Imagen detectada: %s\nScore: %.3f\nTiempo: %s\nMemoria: %s",
 									name, score, elapsed, formatMemory(float64(memUsedKB)))
-								m.TakeAction(s, msg, "Imagen Scam", detail, 7*24*time.Hour, crop)
+								m.TakeAction(s, msg.Message, "Imagen Scam", detail, 7*24*time.Hour, crop)
 							})
 							return
 						}
@@ -235,7 +275,7 @@ func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCre
 								crop = buf.Bytes()
 							}
 							once.Do(func() {
-								m.TakeAction(s, msg, "Contenido NSFW", "Imagen detectada como no segura para el servidor.", 7*24*time.Hour, crop)
+								m.TakeAction(s, msg.Message, "Contenido NSFW", "Imagen detectada como no segura para el servidor.", 7*24*time.Hour, crop)
 							})
 						}
 					}
@@ -272,7 +312,7 @@ func formatMemory(b float64) string {
 	}
 }
 
-func (m *Manager) TakeAction(s *discordgo.Session, msg *discordgo.MessageCreate, reason, detail string, muteDuration time.Duration, cropData []byte) {
+func (m *Manager) TakeAction(s *discordgo.Session, msg *discordgo.Message, reason, detail string, muteDuration time.Duration, cropData []byte) {
 	s.ChannelMessageDelete(msg.ChannelID, msg.ID)
 
 	if muteDuration > 0 {

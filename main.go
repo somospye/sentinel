@@ -58,6 +58,10 @@ func main() {
 		manager.AnalyzeMessage(s, m)
 	})
 
+	dg.AddHandler(func(s *discordgo.Session, m *discordgo.MessageUpdate) {
+		manager.AnalyzeMessageEdit(s, m)
+	})
+
 	dg.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if i.Type != discordgo.InteractionApplicationCommand {
 			return
