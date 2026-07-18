@@ -23,6 +23,12 @@ type ScamImage struct {
 	Embedding []float32
 }
 
+type ImageScanner interface {
+	Compare(img image.Image) (bool, string, float32, []byte)
+	LoadScamImages(dir string) error
+	Close()
+}
+
 type CLIPScanner struct {
 	scamImages []ScamImage
 	mu         sync.RWMutex

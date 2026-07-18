@@ -16,6 +16,18 @@ import (
 	"github.com/dlclark/regexp2"
 )
 
+const ScamImageReason = "Imagen Scam"
+
+type BotSession interface {
+	GuildMemberDelete(guildID, userID string, options ...discordgo.RequestOption) error
+	GuildChannels(guildID string, options ...discordgo.RequestOption) ([]*discordgo.Channel, error)
+	ChannelMessages(channelID string, limit int, beforeID, afterID, aroundID string, options ...discordgo.RequestOption) ([]*discordgo.Message, error)
+	ChannelMessageDelete(channelID, messageID string, options ...discordgo.RequestOption) error
+	ChannelMessagesBulkDelete(channelID string, messages []string, options ...discordgo.RequestOption) error
+	ChannelMessageSendComplex(channelID string, data *discordgo.MessageSend, options ...discordgo.RequestOption) (*discordgo.Message, error)
+	GuildMemberTimeout(guildID, userID string, until *time.Time, options ...discordgo.RequestOption) error
+}
+
 type Config struct {
 	LogChannelID    string `json:"log_channel_id"`
 	EventsChannelID string `json:"events_channel_id"`
@@ -23,7 +35,7 @@ type Config struct {
 }
 
 type Manager struct {
-	Scanner        *CLIPScanner
+	Scanner        ImageScanner
 	ScamFilters    []*regexp2.Regexp
 	SpamFilters    []IFilter
 	GuildConfig    map[string]*Config
@@ -114,7 +126,7 @@ func (m *Manager) IsNSFWEnabled(guildID string) bool {
 	return false
 }
 
-func (m *Manager) AnalyzeMessageEdit(s *discordgo.Session, msg *discordgo.MessageUpdate) {
+func (m *Manager) AnalyzeMessageEdit(s BotSession, msg *discordgo.MessageUpdate) {
 	if msg.Author.Bot {
 		return
 	}
@@ -154,7 +166,7 @@ func (m *Manager) AnalyzeMessageEdit(s *discordgo.Session, msg *discordgo.Messag
 	}
 }
 
-func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCreate) {
+func (m *Manager) AnalyzeMessage(s BotSession, msg *discordgo.MessageCreate) {
 	if msg.Author.Bot {
 		return
 	}
@@ -199,7 +211,21 @@ func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCre
 		return
 	}
 
-	// Lógica de usuario nuevo o inactivo (no habla hace > 1 semana)
+	// Detectar imágenes con nombres secuenciales (1.ext, 2.ext, 3.ext...)
+	if isSequentialScamNaming(msg.Attachments) {
+		m.KickAndPurge(s, msg.Message, "Imágenes Secuenciales Scam",
+			"Imágenes nombradas secuencialmente detectadas (patrón de scam).", nil)
+		return
+	}
+
+	// Solo analiza imágenes si hay 2 o más, a menos que sea un usuario nuevo/inactivo
+	imgCount := 0
+	for _, att := range msg.Attachments {
+		if strings.HasPrefix(att.ContentType, "image/") {
+			imgCount++
+		}
+	}
+
 	isNewOrInactive := false
 	m.mu.RLock()
 	lastSeen, ok := m.LastActivity[msg.Author.ID]
@@ -211,19 +237,10 @@ func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCre
 		isNewOrInactive = true
 	}
 
-	// También checamos JoinedAt si está disponible
 	if !isNewOrInactive && msg.Member != nil {
 		joinedAt := msg.Member.JoinedAt
 		if time.Since(joinedAt) < 7*24*time.Hour {
 			isNewOrInactive = true
-		}
-	}
-
-	// Solo analiza imágenes si hay 2 o más, a menos que sea un usuario nuevo/inactivo
-	imgCount := 0
-	for _, att := range msg.Attachments {
-		if strings.HasPrefix(att.ContentType, "image/") {
-			imgCount++
 		}
 	}
 
@@ -259,7 +276,7 @@ func (m *Manager) AnalyzeMessage(s *discordgo.Session, msg *discordgo.MessageCre
 							once.Do(func() {
 								detail := fmt.Sprintf("Imagen detectada: %s\nScore: %.3f\nTiempo: %s\nMemoria: %s",
 									name, score, elapsed, formatMemory(float64(memUsedKB)))
-								m.TakeAction(s, msg.Message, "Imagen Scam", detail, 7*24*time.Hour, crop)
+								m.KickAndPurge(s, msg.Message, ScamImageReason, detail, crop)
 							})
 							return
 						}
@@ -312,7 +329,82 @@ func formatMemory(b float64) string {
 	}
 }
 
-func (m *Manager) TakeAction(s *discordgo.Session, msg *discordgo.Message, reason, detail string, muteDuration time.Duration, cropData []byte) {
+func (m *Manager) KickAndPurge(s BotSession, msg *discordgo.Message, reason, detail string, cropData []byte) {
+	err := s.GuildMemberDelete(msg.GuildID, msg.Author.ID)
+	if err != nil {
+		fmt.Printf("Error kickeando usuario %s: %v\n", msg.Author.ID, err)
+		return
+	}
+
+	channels, err := s.GuildChannels(msg.GuildID)
+	if err == nil {
+		for _, channel := range channels {
+			if channel.Type != discordgo.ChannelTypeGuildText {
+				continue
+			}
+			messages, err := s.ChannelMessages(channel.ID, 100, "", "", "")
+			if err != nil {
+				continue
+			}
+			var toDelete []string
+			for _, m := range messages {
+				if m.Author.ID == msg.Author.ID {
+					toDelete = append(toDelete, m.ID)
+				}
+			}
+			for i := 0; i < len(toDelete); i += 100 {
+				end := i + 100
+				if end > len(toDelete) {
+					end = len(toDelete)
+				}
+				ids := toDelete[i:end]
+				if len(ids) == 1 {
+					s.ChannelMessageDelete(channel.ID, ids[0])
+				} else if len(ids) > 0 {
+					s.ChannelMessagesBulkDelete(channel.ID, ids)
+				}
+			}
+		}
+	}
+
+	// También borra el mensaje original
+	s.ChannelMessageDelete(msg.ChannelID, msg.ID)
+
+	// Log
+	logChannel := m.GetLogChannel(msg.GuildID)
+	if logChannel != "" {
+		embed := &discordgo.MessageEmbed{
+			Title:       "🚨 Automod - Usuario Kickeado",
+			Description: fmt.Sprintf("Usuario: <@%s> (%s) [%s]\nRazón: **%s**\nDetalle: %s\nAcción: Kickeado + mensajes eliminados", msg.Author.ID, msg.Author.String(), msg.Author.ID, reason, detail),
+			Color:       0xff0000,
+			Timestamp:   time.Now().Format(time.RFC3339),
+			Footer: &discordgo.MessageEmbedFooter{
+				Text: "Sentinel Automod",
+			},
+		}
+
+		messageData := &discordgo.MessageSend{
+			Embeds: []*discordgo.MessageEmbed{embed},
+		}
+
+		if len(cropData) > 0 {
+			embed.Image = &discordgo.MessageEmbedImage{
+				URL: "attachment://evidence.jpg",
+			}
+			messageData.Files = []*discordgo.File{
+				{
+					Name:        "evidence.jpg",
+					ContentType: "image/jpeg",
+					Reader:      bytes.NewReader(cropData),
+				},
+			}
+		}
+
+		s.ChannelMessageSendComplex(logChannel, messageData)
+	}
+}
+
+func (m *Manager) TakeAction(s BotSession, msg *discordgo.Message, reason, detail string, muteDuration time.Duration, cropData []byte) {
 	s.ChannelMessageDelete(msg.ChannelID, msg.ID)
 
 	if muteDuration > 0 {
@@ -470,4 +562,42 @@ func (m *Manager) LoadActivity() {
 	if err != nil {
 		fmt.Printf("Error deserializando actividad: %v\n", err)
 	}
+}
+
+func isSequentialScamNaming(attachments []*discordgo.MessageAttachment) bool {
+	imgNames := make([]string, 0)
+	for _, att := range attachments {
+		if strings.HasPrefix(att.ContentType, "image/") {
+			imgNames = append(imgNames, att.Filename)
+		}
+	}
+
+	if len(imgNames) < 3 {
+		return false
+	}
+
+	for i := 0; i < len(imgNames); i++ {
+		name := imgNames[i]
+		extIdx := strings.LastIndex(name, ".")
+		if extIdx <= 0 {
+			return false
+		}
+		prefix := name[:extIdx]
+		if _, err := fmt.Sscanf(prefix, "%d", new(int)); err != nil {
+			return false
+		}
+		for j := i + 1; j < len(imgNames); j++ {
+			other := imgNames[j]
+			otherExtIdx := strings.LastIndex(other, ".")
+			if otherExtIdx <= 0 {
+				return false
+			}
+			otherPrefix := other[:otherExtIdx]
+			if _, err := fmt.Sscanf(otherPrefix, "%d", new(int)); err != nil {
+				return false
+			}
+		}
+	}
+
+	return true
 }

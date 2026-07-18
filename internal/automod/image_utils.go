@@ -35,7 +35,9 @@ func loadImage(path string) (image.Image, error) {
 	return img, nil
 }
 
-func DownloadImage(url string) (image.Image, error) {
+var DownloadImage = defaultDownloadImage
+
+func defaultDownloadImage(url string) (image.Image, error) {
 	resp, err := http.Get(url)
 
 	if err != nil {
