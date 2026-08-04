@@ -114,7 +114,6 @@ func GetScamFilterList() []*regexp2.Regexp {
 }
 
 var SpamFilterList = []IFilter{
-	{Filter: regexp2.MustCompile(`https?://[\w.-]+\.xyz($|\W)`, regexp2.IgnoreCase), Mute: false, WarnMessage: LINK_SOSPECHOSO},
 	{Filter: regexp2.MustCompile(`https?://[\w.-]+\.click($|\W)`, regexp2.IgnoreCase), Mute: false, WarnMessage: LINK_SOSPECHOSO},
 	{Filter: regexp2.MustCompile(`https?://[\w.-]+\.info($|\W)`, regexp2.IgnoreCase), Mute: false, WarnMessage: LINK_SOSPECHOSO},
 	{Filter: regexp2.MustCompile(`https?://[\w.-]+\.ru($|\W)`, regexp2.IgnoreCase), Mute: false, WarnMessage: LINK_SOSPECHOSO},
