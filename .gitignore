@@ -28,3 +28,8 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Nixos
+.envrc
+!.envrc.template
+.direnv
