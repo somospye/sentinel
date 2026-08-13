@@ -35,6 +35,38 @@ func loadImage(path string) (image.Image, error) {
 	return img, nil
 }
 
+func centerCrop(img image.Image) image.Image {
+	bounds := img.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+	cropSize := int(float64(min(w, h)) * 0.65)
+	if cropSize < 100 {
+		cropSize = min(w, h)
+	}
+	startX := bounds.Min.X + (w-cropSize)/2
+	startY := bounds.Min.Y + (h-cropSize)/2
+	cropRect := image.Rect(0, 0, cropSize, cropSize)
+	cropped := image.NewRGBA(cropRect)
+	draw.Draw(cropped, cropRect, img, image.Point{startX, startY}, draw.Src)
+	return cropped
+}
+
+func pixelate(img image.Image, blockSize int) image.Image {
+	bounds := img.Bounds()
+	smallW := bounds.Dx() / blockSize
+	smallH := bounds.Dy() / blockSize
+	if smallW < 1 {
+		smallW = 1
+	}
+	if smallH < 1 {
+		smallH = 1
+	}
+	small := image.NewRGBA(image.Rect(0, 0, smallW, smallH))
+	draw.NearestNeighbor.Scale(small, small.Bounds(), img, bounds, draw.Over, nil)
+	dst := image.NewRGBA(bounds)
+	draw.NearestNeighbor.Scale(dst, bounds, small, small.Bounds(), draw.Over, nil)
+	return dst
+}
+
 var DownloadImage = defaultDownloadImage
 
 func defaultDownloadImage(url string) (image.Image, error) {

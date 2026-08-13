@@ -374,13 +374,6 @@ func cosineSimilarity(a, b []float32) float32 {
 }
 
 func GetSharedLibPath() string {
-	exePath, err := os.Executable()
-	if err != nil {
-		panic(fmt.Errorf("no se pudo obtener path del ejecutable: %w", err))
-	}
-
-	exeDir := filepath.Dir(exePath)
-
 	var libName string
 	if runtime.GOOS == "windows" {
 		libName = "onnxruntime.dll"
@@ -388,6 +381,24 @@ func GetSharedLibPath() string {
 		libName = "libonnxruntime.so"
 	}
 
-	libPath := filepath.Join(exeDir, "runtime", libName)
-	return libPath
+	var candidates []string
+
+	// CWD primero: cubre `go run` y correr el binario desde la raíz del repo
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, filepath.Join(cwd, "runtime", libName))
+	}
+
+	// Fallback: directorio del ejecutable (layout de deploy)
+	if exePath, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exePath), "runtime", libName))
+	}
+
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && !info.IsDir() {
+			return c
+		}
+	}
+
+	// Último recurso: dejar que el loader busque en PATH / dir del exe
+	return libName
 }

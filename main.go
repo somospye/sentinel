@@ -32,7 +32,7 @@ func main() {
 
 	e := ort.InitializeEnvironment()
 	if e != nil {
-		_ = fmt.Errorf("Error inicializando ONNX Runtime: %w", e)
+		log.Printf("Error inicializando ONNX Runtime (%s): %v", automod.GetSharedLibPath(), e)
 	}
 
 	token := os.Getenv("BOT_TOKEN")

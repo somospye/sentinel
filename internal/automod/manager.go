@@ -300,7 +300,8 @@ func (m *Manager) AnalyzeMessage(s BotSession, msg *discordgo.MessageCreate) {
 							detail := fmt.Sprintf("Imagen NSFW detectada.\nScore: %.3f", score)
 							var crop []byte
 							var buf bytes.Buffer
-							jpeg.Encode(&buf, img, &jpeg.Options{Quality: 60})
+							evidence := pixelate(centerCrop(img), 8)
+							jpeg.Encode(&buf, evidence, &jpeg.Options{Quality: 60})
 							crop = buf.Bytes()
 							once.Do(func() {
 								m.TakeAction(s, msg.Message, "Contenido NSFW", detail, 7*24*time.Hour, crop)
