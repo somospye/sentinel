@@ -36,6 +36,7 @@ type Config struct {
 
 type Manager struct {
 	Scanner        ImageScanner
+	NSFW           *NSFWDetector
 	ScamFilters    []*regexp2.Regexp
 	SpamFilters    []IFilter
 	GuildConfig    map[string]*Config
@@ -66,6 +67,15 @@ func NewManager(configPath string) *Manager {
 	}
 	m.LoadConfig()
 	m.LoadActivity()
+
+	nsfw, err := NewNSFWDetector()
+	if err != nil {
+		fmt.Printf("Advertencia: no se pudo cargar el detector NSFW: %v\n", err)
+	} else {
+		fmt.Println("Detector NSFW cargado (vit-base-nsfw-detector)")
+	}
+	m.NSFW = nsfw
+
 	return m
 }
 
@@ -282,17 +292,18 @@ func (m *Manager) AnalyzeMessage(s BotSession, msg *discordgo.MessageCreate) {
 						}
 					}
 
-					if m.IsNSFWEnabled(msg.GuildID) {
-						isNSFW, err := CheckNSFW(attachment.URL)
-						if err == nil && isNSFW {
+					if m.IsNSFWEnabled(msg.GuildID) && m.NSFW != nil && img != nil {
+						isNSFW, score, err := m.NSFW.Classify(img)
+						if err != nil {
+							fmt.Printf("Error clasificando imagen NSFW: %v\n", err)
+						} else if isNSFW {
+							detail := fmt.Sprintf("Imagen NSFW detectada.\nScore: %.3f", score)
 							var crop []byte
-							if img != nil {
-								var buf bytes.Buffer
-								jpeg.Encode(&buf, img, &jpeg.Options{Quality: 60})
-								crop = buf.Bytes()
-							}
+							var buf bytes.Buffer
+							jpeg.Encode(&buf, img, &jpeg.Options{Quality: 60})
+							crop = buf.Bytes()
 							once.Do(func() {
-								m.TakeAction(s, msg.Message, "Contenido NSFW", "Imagen detectada como no segura para el servidor.", 7*24*time.Hour, crop)
+								m.TakeAction(s, msg.Message, "Contenido NSFW", detail, 7*24*time.Hour, crop)
 							})
 						}
 					}

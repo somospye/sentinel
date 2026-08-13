@@ -35,4 +35,8 @@ COPY --from=builder /app/sentinel .
 
 COPY --from=builder /app/assets ./assets
 
+COPY --from=builder /app/models ./models
+
+COPY --from=builder /app/runtime ./runtime
+
 CMD ["./sentinel"]

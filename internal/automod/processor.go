@@ -186,8 +186,109 @@ func (c *CLIPScanner) Compare(img image.Image) (bool, string, float32, []byte) {
 	return false, "", bestScore, nil
 }
 
-func CheckNSFW(str string) (bool, error) {
-	return false, nil
+const nsfwModelPath = "models/vit_nsfw.onnx"
+
+type NSFWDetector struct {
+	session      *ort.AdvancedSession
+	inputTensor  *ort.Tensor[float32]
+	outputTensor *ort.Tensor[float32]
+	mu           sync.Mutex
+}
+
+func NewNSFWDetector() (*NSFWDetector, error) {
+	inputData := make([]float32, 3*384*384)
+	session, inputTensor, outputTensor, err := createNSFWSession(inputData)
+	if err != nil {
+		return nil, err
+	}
+	return &NSFWDetector{
+		session:      session,
+		inputTensor:  inputTensor,
+		outputTensor: outputTensor,
+	}, nil
+}
+
+func (d *NSFWDetector) Close() {
+	d.session.Destroy()
+	d.inputTensor.Destroy()
+	d.outputTensor.Destroy()
+}
+
+func (d *NSFWDetector) Classify(img image.Image) (bool, float32, error) {
+	data := preprocessNSFW(img)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	copy(d.inputTensor.GetData(), data)
+	if err := d.session.Run(); err != nil {
+		return false, 0, err
+	}
+
+	logits := d.outputTensor.GetData()
+	// Softmax sobre las 2 clases: 0=sfw, 1=nsfw
+	max := logits[0]
+	if logits[1] > max {
+		max = logits[1]
+	}
+	e0 := float32(math.Exp(float64(logits[0] - max)))
+	e1 := float32(math.Exp(float64(logits[1] - max)))
+	nsfwScore := e1 / (e0 + e1)
+
+	return nsfwScore >= 0.5, nsfwScore, nil
+}
+
+func createNSFWSession(imageData []float32) (*ort.AdvancedSession, *ort.Tensor[float32], *ort.Tensor[float32], error) {
+	inputShape := ort.NewShape(1, 3, 384, 384)
+	outputShape := ort.NewShape(1, 2)
+
+	inputTensor, err := ort.NewTensor(inputShape, imageData)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("creando tensor input NSFW: %w", err)
+	}
+
+	outputTensor, err := ort.NewEmptyTensor[float32](outputShape)
+	if err != nil {
+		inputTensor.Destroy()
+		return nil, nil, nil, fmt.Errorf("creando tensor output NSFW: %w", err)
+	}
+
+	session, err := ort.NewAdvancedSession(
+		nsfwModelPath,
+		[]string{"pixel_values"},
+		[]string{"logits"},
+		[]ort.Value{inputTensor},
+		[]ort.Value{outputTensor},
+		nil,
+	)
+	if err != nil {
+		inputTensor.Destroy()
+		outputTensor.Destroy()
+		return nil, nil, nil, fmt.Errorf("creando sesión NSFW: %w", err)
+	}
+
+	return session, inputTensor, outputTensor, nil
+}
+
+func preprocessNSFW(img image.Image) []float32 {
+	img = resizeImage(img, 384, 384)
+
+	data := make([]float32, 3*384*384)
+	for y := 0; y < 384; y++ {
+		for x := 0; x < 384; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+
+			rf := float32(r>>8)/255/0.5 - 1
+			gf := float32(g>>8)/255/0.5 - 1
+			bf := float32(b>>8)/255/0.5 - 1
+
+			idx := y*384 + x
+			data[idx] = rf
+			data[384*384+idx] = gf
+			data[2*384*384+idx] = bf
+		}
+	}
+	return data
 }
 
 func preprocess(img image.Image) []float32 {
