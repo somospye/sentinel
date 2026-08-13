@@ -33,3 +33,7 @@ go.work.sum
 .envrc
 !.envrc.template
 .direnv
+
+# ONNX model too large for git LFS (download from HF)
+models/vit_nsfw.onnx
+
