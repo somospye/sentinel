@@ -171,7 +171,7 @@ func (m *Manager) AnalyzeMessage(s BotSession, msg *discordgo.MessageCreate) {
 		return
 	}
 
-	if slices.Contains(msg.Member.Roles, os.Getenv("ADMIN_ID")) {
+	if msg.Member != nil && slices.Contains(msg.Member.Roles, os.Getenv("ADMIN_ID")) {
 		return
 	}
 
@@ -330,6 +330,11 @@ func formatMemory(b float64) string {
 }
 
 func (m *Manager) KickAndPurge(s BotSession, msg *discordgo.Message, reason, detail string, cropData []byte) {
+	// Borra el mensaje que disparó primero: aunque algo falle después, el scam visible desaparece
+	if err := s.ChannelMessageDelete(msg.ChannelID, msg.ID); err != nil {
+		fmt.Printf("Error borrando mensaje de scam %s: %v\n", msg.ID, err)
+	}
+
 	err := s.GuildMemberDelete(msg.GuildID, msg.Author.ID)
 	if err != nil {
 		fmt.Printf("Error kickeando usuario %s: %v\n", msg.Author.ID, err)
@@ -337,17 +342,23 @@ func (m *Manager) KickAndPurge(s BotSession, msg *discordgo.Message, reason, det
 	}
 
 	channels, err := s.GuildChannels(msg.GuildID)
-	if err == nil {
+	if err != nil {
+		fmt.Printf("Error listando canales para purgar en %s: %v\n", msg.GuildID, err)
+	} else {
 		for _, channel := range channels {
 			if channel.Type != discordgo.ChannelTypeGuildText {
 				continue
 			}
 			messages, err := s.ChannelMessages(channel.ID, 100, "", "", "")
 			if err != nil {
+				fmt.Printf("Error obteniendo mensajes de %s: %v\n", channel.ID, err)
 				continue
 			}
 			var toDelete []string
 			for _, m := range messages {
+				if m.Author == nil {
+					continue
+				}
 				if m.Author.ID == msg.Author.ID {
 					toDelete = append(toDelete, m.ID)
 				}
@@ -359,16 +370,22 @@ func (m *Manager) KickAndPurge(s BotSession, msg *discordgo.Message, reason, det
 				}
 				ids := toDelete[i:end]
 				if len(ids) == 1 {
-					s.ChannelMessageDelete(channel.ID, ids[0])
+					if err := s.ChannelMessageDelete(channel.ID, ids[0]); err != nil {
+						fmt.Printf("Error borrando mensaje %s: %v\n", ids[0], err)
+					}
 				} else if len(ids) > 0 {
-					s.ChannelMessagesBulkDelete(channel.ID, ids)
+					if err := s.ChannelMessagesBulkDelete(channel.ID, ids); err != nil {
+						fmt.Printf("Error borrado masivo en %s: %v, reintentando uno por uno\n", channel.ID, err)
+						for _, id := range ids {
+							if err := s.ChannelMessageDelete(channel.ID, id); err != nil {
+								fmt.Printf("Error borrando mensaje %s: %v\n", id, err)
+							}
+						}
+					}
 				}
 			}
 		}
 	}
-
-	// También borra el mensaje original
-	s.ChannelMessageDelete(msg.ChannelID, msg.ID)
 
 	// Log
 	logChannel := m.GetLogChannel(msg.GuildID)
