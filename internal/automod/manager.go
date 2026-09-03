@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"image"
 	"image/jpeg"
 	"os"
 	"runtime"
@@ -36,6 +37,7 @@ type Config struct {
 
 type Manager struct {
 	Scanner        ImageScanner
+	Hashes         *HashList
 	NSFW           *NSFWDetector
 	ScamFilters    []*regexp2.Regexp
 	SpamFilters    []IFilter
@@ -56,6 +58,7 @@ type messageEntry struct {
 func NewManager(configPath string) *Manager {
 	m := &Manager{
 		Scanner:        CLIPScan(),
+		Hashes:         NewHashList(strings.TrimSuffix(configPath, ".json") + "_hashes.json"),
 		ScamFilters:    GetScamFilterList(),
 		SpamFilters:    SpamFilterList,
 		GuildConfig:    make(map[string]*Config),
@@ -271,7 +274,7 @@ func (m *Manager) AnalyzeMessage(s BotSession, msg *discordgo.MessageCreate) {
 						var mStart, mEnd runtime.MemStats
 						runtime.ReadMemStats(&mStart)
 
-						match, name, score, crop := m.Scanner.Compare(img)
+						match, detail, crop := m.detectScam(img)
 
 						elapsed := time.Since(start)
 
@@ -284,8 +287,7 @@ func (m *Manager) AnalyzeMessage(s BotSession, msg *discordgo.MessageCreate) {
 
 						if match {
 							once.Do(func() {
-								detail := fmt.Sprintf("Imagen detectada: %s\nScore: %.3f\nTiempo: %s\nMemoria: %s",
-									name, score, elapsed, formatMemory(float64(memUsedKB)))
+								detail += fmt.Sprintf("\nTiempo: %s\nMemoria: %s", elapsed, formatMemory(float64(memUsedKB)))
 								m.KickAndPurge(s, msg.Message, ScamImageReason, detail, crop)
 							})
 							return
@@ -317,6 +319,44 @@ func (m *Manager) AnalyzeMessage(s BotSession, msg *discordgo.MessageCreate) {
 	m.LastActivity[msg.Author.ID] = time.Now()
 	m.mu.Unlock()
 	go m.SaveActivity()
+}
+
+// detectScam corre el pipeline de dos niveles: primero pHash (barato, sin
+// inferencia) y solo si la distancia cae en zona gris se consulta el modelo.
+// Si el modelo confirma, el pHash de la imagen se agrega a la lista para que
+// la siguiente variante se resuelva en el nivel 1.
+func (m *Manager) detectScam(img image.Image) (bool, string, []byte) {
+	state, name, dist, hash := m.Hashes.Match(img)
+
+	switch state {
+	case HashMatched:
+		detail := fmt.Sprintf("Imagen detectada: %s\nMétodo: pHash (distancia %d)", name, dist)
+		return true, detail, cropEvidence(img)
+	case HashNoMatch:
+		return false, "", nil
+	}
+
+	// Zona gris: se parece a algo conocido pero no lo suficiente. Fallback al modelo.
+	match, modelName, score, crop := m.Scanner.Compare(img)
+	if !match {
+		return false, "", nil
+	}
+
+	if hash != nil {
+		if err := m.Hashes.Add(hash, modelName, "model"); err != nil {
+			fmt.Printf("Error guardando pHash aprendido de %s: %v\n", modelName, err)
+		}
+	}
+
+	detail := fmt.Sprintf("Imagen detectada: %s\nMétodo: modelo (fallback; pHash a %d de %s)\nScore: %.3f",
+		modelName, dist, name, score)
+	return true, detail, crop
+}
+
+func cropEvidence(img image.Image) []byte {
+	var buf bytes.Buffer
+	jpeg.Encode(&buf, centerCrop(img), &jpeg.Options{Quality: 75})
+	return buf.Bytes()
 }
 
 func formatMemory(b float64) string {
