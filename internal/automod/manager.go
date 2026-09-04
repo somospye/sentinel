@@ -322,34 +322,31 @@ func (m *Manager) AnalyzeMessage(s BotSession, msg *discordgo.MessageCreate) {
 }
 
 // detectScam corre el pipeline de dos niveles: primero pHash (barato, sin
-// inferencia) y solo si la distancia cae en zona gris se consulta el modelo.
-// Si el modelo confirma, el pHash de la imagen se agrega a la lista para que
-// la siguiente variante se resuelva en el nivel 1.
+// inferencia). El hash solo decide el caso positivo; si no hay match la imagen
+// pasa al modelo como hasta ahora. Si el modelo confirma, los pHash de la
+// imagen se agregan a la lista para que la siguiente repetición se resuelva en
+// el nivel 1.
 func (m *Manager) detectScam(img image.Image) (bool, string, []byte) {
-	state, name, dist, hash := m.Hashes.Match(img)
-
-	switch state {
-	case HashMatched:
+	matched, name, dist := m.Hashes.Match(img)
+	if matched {
 		detail := fmt.Sprintf("Imagen detectada: %s\nMétodo: pHash (distancia %d)", name, dist)
 		return true, detail, cropEvidence(img)
-	case HashNoMatch:
-		return false, "", nil
 	}
 
-	// Zona gris: se parece a algo conocido pero no lo suficiente. Fallback al modelo.
 	match, modelName, score, crop := m.Scanner.Compare(img)
 	if !match {
 		return false, "", nil
 	}
 
-	if hash != nil {
-		if err := m.Hashes.Add(hash, modelName, "model"); err != nil {
-			fmt.Printf("Error guardando pHash aprendido de %s: %v\n", modelName, err)
-		}
+	if err := m.Hashes.Add(img, modelName, "model"); err != nil {
+		fmt.Printf("Error guardando pHash aprendido de %s: %v\n", modelName, err)
 	}
 
-	detail := fmt.Sprintf("Imagen detectada: %s\nMétodo: modelo (fallback; pHash a %d de %s)\nScore: %.3f",
-		modelName, dist, name, score)
+	nearest := "sin pHash cercano"
+	if dist >= 0 {
+		nearest = fmt.Sprintf("pHash a %d de %s", dist, name)
+	}
+	detail := fmt.Sprintf("Imagen detectada: %s\nMétodo: modelo (%s)\nScore: %.3f", modelName, nearest, score)
 	return true, detail, crop
 }
 

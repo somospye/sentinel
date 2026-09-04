@@ -56,12 +56,31 @@ func TestMatchRescaledImage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	state, name, dist, _ := list.Match(rescale(original, 200, 150))
-	if state != HashMatched {
-		t.Fatalf("esperaba HashMatched, obtuve %v (dist %d)", state, dist)
+	matched, name, dist := list.Match(rescale(original, 200, 150))
+	if !matched {
+		t.Fatalf("esperaba match, distancia %d", dist)
 	}
 	if name != "scam.png" {
 		t.Fatalf("esperaba scam.png, obtuve %q", name)
+	}
+}
+
+func TestMatchMirroredAndRotatedImage(t *testing.T) {
+	dir := t.TempDir()
+	original := gradient(400, 300, 1)
+	writePNG(t, filepath.Join(dir, "scam.png"), original)
+
+	list := NewHashList(filepath.Join(dir, "hashes.json"))
+	if err := list.LoadSeed(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	// La imagen entrante llega a tamaño completo, transformada y recomprimida.
+	for i, variant := range dihedralVariants(original) {
+		matched, _, dist := list.Match(rescale(variant, variant.Bounds().Dx()/2, variant.Bounds().Dy()/2))
+		if !matched {
+			t.Fatalf("variante %d no matcheó (distancia %d)", i, dist)
+		}
 	}
 }
 
@@ -74,8 +93,8 @@ func TestUnrelatedImageDoesNotMatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	state, _, dist, _ := list.Match(gradient(400, 300, 200))
-	if state == HashMatched {
+	matched, _, dist := list.Match(gradient(400, 300, 200))
+	if matched {
 		t.Fatalf("una imagen sin relación no debería matchear (dist %d)", dist)
 	}
 }
@@ -86,15 +105,11 @@ func TestAddPersistsAndReloads(t *testing.T) {
 
 	list := NewHashList(path)
 	img := gradient(300, 300, 7)
-	hash, err := ComputeHash(img)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := list.Add(hash, "learned.png", "model"); err != nil {
+	if err := list.Add(img, "learned.png", "model"); err != nil {
 		t.Fatal(err)
 	}
 	// Duplicado exacto: no debe crecer la lista
-	if err := list.Add(hash, "dup.png", "model"); err != nil {
+	if err := list.Add(img, "dup.png", "model"); err != nil {
 		t.Fatal(err)
 	}
 	if list.Len() != 1 {
@@ -108,9 +123,12 @@ func TestAddPersistsAndReloads(t *testing.T) {
 	if reloaded.Len() != 1 {
 		t.Fatalf("esperaba 1 entrada tras recargar, hay %d", reloaded.Len())
 	}
-	state, name, _, _ := reloaded.Match(img)
-	if state != HashMatched || name != "learned.png" {
-		t.Fatalf("esperaba match con learned.png, obtuve %v %q", state, name)
+	matched, name, _ := reloaded.Match(img)
+	if !matched || name != "learned.png" {
+		t.Fatalf("esperaba match con learned.png, obtuve %v %q", matched, name)
+	}
+	if got := len(reloaded.entries[0].parsed); got != 8 {
+		t.Fatalf("esperaba 8 hashes por entrada, hay %d", got)
 	}
 }
 
@@ -123,8 +141,8 @@ func TestLoadLearnedMissingFileIsNotError(t *testing.T) {
 
 func TestEmptyListNoMatch(t *testing.T) {
 	list := NewHashList(filepath.Join(t.TempDir(), "hashes.json"))
-	state, _, dist, hash := list.Match(gradient(100, 100, 3))
-	if state != HashNoMatch || dist != -1 || hash == nil {
-		t.Fatalf("lista vacía: esperaba HashNoMatch/-1/hash!=nil, obtuve %v/%d/%v", state, dist, hash)
+	matched, _, dist := list.Match(gradient(100, 100, 3))
+	if matched || dist != -1 {
+		t.Fatalf("lista vacía: esperaba no match y -1, obtuve %v/%d", matched, dist)
 	}
 }
