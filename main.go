@@ -49,6 +49,12 @@ func main() {
 
 	manager := automod.NewManager("./config.json")
 	scamPath := "./assets/scam"
+	if err := manager.Hashes.LoadSeed(scamPath); err != nil {
+		log.Printf("Advertencia: Error cargando pHash de imágenes de scam (%v)", err)
+	}
+	if err := manager.Hashes.LoadLearned(); err != nil {
+		log.Printf("Advertencia: Error cargando pHash aprendidos (%v)", err)
+	}
 	err = manager.Scanner.LoadScamImages(scamPath)
 	if err != nil {
 		log.Printf("Advertencia: Error cargando imágenes de scam (%v)", err)
@@ -174,9 +180,12 @@ func main() {
 				})
 				return
 			}
-			defer out.Close()
 			io.Copy(out, resp.Body)
+			out.Close()
 
+			if err := manager.Hashes.AddFile(filepath.Join(scamPath, fileName), "manual"); err != nil {
+				log.Printf("Error agregando pHash de %s: %v", fileName, err)
+			}
 			manager.Scanner.LoadScamImages(scamPath)
 
 			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
