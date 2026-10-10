@@ -318,7 +318,7 @@ func main() {
 		})
 	})
 
-	dg.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsMessageContent | discordgo.IntentsGuilds | discordgo.IntentsGuildMembers
+	dg.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsMessageContent | discordgo.IntentsGuilds
 
 	err = dg.Open()
 	if err != nil {
